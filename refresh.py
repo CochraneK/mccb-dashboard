@@ -1581,6 +1581,16 @@ PERSON_TEMPLATE = r"""<!DOCTYPE html>
 .pd-warn{background:var(--amber)}
 .pd-mute{background:#94a3b8}
 .pdisc{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.65}
+.psub{margin-top:13px;font-size:13px;font-weight:750;color:var(--teal-dark);display:flex;align-items:center;gap:7px}
+.psub:first-child{margin-top:0}
+.psub::before{content:'';width:3px;height:13px;border-radius:2px;background:var(--teal);flex:none}
+.pd{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px;line-height:1.6}
+.pd .dn{font-weight:700;color:#1f2937;white-space:nowrap}
+.pd .dt{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pd .dt.lo{color:#be123c}
+.pd .dt.md{color:#d97706}
+.pd .dt.ok{color:var(--teal-dark)}
+.pd .dd{flex-basis:100%;color:var(--muted);font-size:12.5px}
 </style>
 </head>
 <body>
@@ -1810,9 +1820,30 @@ function renderPerson(p){
     document.getElementById('pdet').innerHTML=h;
   }
   // ---- 通俗解读（患者/家属可读；措辞温和、不下诊断结论）----
+  // 7 个认知域的日常含义（MCCB/MATRICS 标准通俗释义）
+  const PLAINDOM={
+    'SoP':'您做简单、熟悉的任务时有多快、多准，比如打字速度、反应快慢',
+    'AV':'长时间保持警觉、注意任务，并及时注意到重要信号的能力，比如开车时注意到红绿灯',
+    'WM':'把信息在脑中短暂记住并边用边处理的能力，比如刚听到的电话号码边记边拨、购物时心算找零',
+    'Vrbl Lrng':'学习和记住词语、名字、口头指示等语言信息的能力',
+    'Vis Lrng':'学习和记住看到的东西（形状、图案、图片、布局）的能力',
+    'RPS':'推理新问题、做决定、规划步骤的能力，比如安排一次出行、想出新问题的解决办法',
+    'SC':'从面部表情、语气和情境中理解他人情绪与社会情境的能力，即读懂他人'
+  };
+  function plainTier(t){
+    if(t<30)return '明显偏低';
+    if(t<40)return '轻度偏低';
+    if(t<45)return '略低（仍在正常参考内）';
+    if(t<55)return '平均水平';
+    if(t<60)return '略高';
+    return '明显偏高';
+  }
   function plainBullets(mp,s){
     const allMode=(s==='all');
     const out=[];
+    const psub=t=>'<div class="psub">'+t+'</div>';
+    // ① 总体评定
+    out.push(psub('① 总体评定'));
     const ov=mp['Overall Comp'];
     if(ov==null){
       out.push('<div class="pb"><span class="pdot pd-mute"></span>本口径缺少总体综合分，请参照下方各认知域的分数。</div>');
@@ -1833,6 +1864,15 @@ function renderPerson(p){
       const tail=ov<40?' 单项分数可能受睡眠、情绪等临时因素影响，复看时可与医生留意这一点。':'';
       out.push('<div class="pb"><span class="pdot '+(ov<40?'pd-warn':'pd-ok')+'"></span>您的总体认知水平为 <b>'+fmt(ov)+' 分</b>（'+lvl+'）。'+grp+tail+'</div>');
     }
+    // ② 各认知域是什么 + 当前水平
+    out.push(psub('② 七个认知域：各管什么，您目前的水平'));
+    DOMAINS.forEach(d=>{
+      const t=mp[d];
+      const cls=(t==null)?'md':(t<40?'lo':(t<45?'md':'ok'));
+      out.push('<div class="pd"><span class="dn">'+(CLAB[d]||d)+'</span><span class="dt '+cls+'">'+(t==null?'未测':(fmt(t)+' 分 · '+plainTier(t)))+'</span><span class="dd">'+(PLAINDOM[d]||'')+'</span></div>');
+    });
+    // ③ 强项与需要留意
+    out.push(psub('③ 强项与需要留意'));
     const doms=DOMAINS.map(d=>({d:d,t:mp[d]})).filter(x=>x.t!=null).sort((a,b)=>b.t-a.t);
     const strong=doms.filter(x=>x.t>=55);
     const okDom=doms.filter(x=>x.t>=50);
@@ -1847,20 +1887,54 @@ function renderPerson(p){
     }else{
       out.push('<div class="pb"><span class="pdot pd-ok"></span>各认知域均未低于关注线（40 分），整体表现良好。</div>');
     }
+    // ④ 历次变化解读
+    out.push(psub('④ 历次变化'));
     if(multi){
-      const fv=(recs[0].sc||{})['Overall Comp'],lvv=(recs[recs.length-1].sc||{})['Overall Comp'];
+      const n=recs.length;
+      const fv=(recs[0].sc||{})['Overall Comp'],lvv=(recs[n-1].sc||{})['Overall Comp'];
       if(fv!=null&&lvv!=null){
         const delta=Math.round((lvv-fv)*10)/10;
-        if(delta>=3)out.push('<div class="pb"><span class="pdot pd-ok"></span>时间变化：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分升到 '+fmt(lvv)+' 分（提升 '+delta+' 分），呈改善趋势，请继续保持当前的生活与治疗方案。</div>');
-        else if(delta<=-3)out.push('<div class="pb"><span class="pdot pd-warn"></span>时间变化：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分降到 '+fmt(lvv)+' 分（下降 '+Math.abs(delta)+' 分），呈下降趋势，请复诊时带上这份报告与医生讨论。</div>');
-        else out.push('<div class="pb"><span class="pdot pd-mute"></span>时间变化：总体认知分在多次测评间基本稳定（'+fmt(fv)+' → '+fmt(lvv)+' 分），未见明显变化。</div>');
+        if(delta>=3)out.push('<div class="pb"><span class="pdot pd-ok"></span>总体：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分升到 '+fmt(lvv)+' 分（提升 '+delta+' 分），呈改善趋势，请继续保持当前的生活与治疗方案。</div>');
+        else if(delta<=-3)out.push('<div class="pb"><span class="pdot pd-warn"></span>总体：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分降到 '+fmt(lvv)+' 分（下降 '+Math.abs(delta)+' 分），呈下降趋势，请复诊时带上这份报告与医生讨论。</div>');
+        else out.push('<div class="pb"><span class="pdot pd-mute"></span>总体：总体认知分从首次到最近一次基本稳定（'+fmt(fv)+' → '+fmt(lvv)+' 分），未见明显变化。</div>');
+      }else{
+        out.push('<div class="pb"><span class="pdot pd-mute"></span>总体：首次或最近一次测评缺少总体综合分，仅能按各域比较。</div>');
       }
+      const up=[],down=[];let stay=0,miss=0;
+      DOMAINS.forEach(d=>{
+        const a=(recs[0].sc||{})[d],b=(recs[n-1].sc||{})[d];
+        if(a==null||b==null){miss++;return;}
+        const dd=Math.round((b-a)*10)/10;
+        if(dd>=3)up.push((CLAB[d]||d)+'（'+fmt(a)+' → '+fmt(b)+'）');
+        else if(dd<=-3)down.push((CLAB[d]||d)+'（'+fmt(a)+' → '+fmt(b)+'）');
+        else stay++;
+      });
+      if(up.length)out.push('<div class="pb"><span class="pdot pd-ok"></span>与首次相比，以下认知域<b>有进步</b>（提高 3 分及以上）：'+up.join('、')+'。</div>');
+      if(down.length)out.push('<div class="pb"><span class="pdot pd-warn"></span>与首次相比，以下认知域<b>有所下降</b>（降低 3 分及以上）：'+down.join('、')+'。</div>');
+      if(!up.length&&!down.length&&stay)out.push('<div class="pb"><span class="pdot pd-mute"></span>与首次相比，各认知域变化都不大（均在 3 分以内）。</div>');
+      if(miss)out.push('<div class="pb"><span class="pdot pd-mute"></span>注：有 '+miss+' 个认知域在首次或最近一次测评中缺分，未纳入比较。</div>');
+      if(n>=3){
+        const a1=(recs[n-2].sc||{})['Overall Comp'],a2=(recs[n-1].sc||{})['Overall Comp'];
+        if(a1!=null&&a2!=null){
+          const dd=Math.round((a2-a1)*10)/10;
+          if(dd>=3)out.push('<div class="pb"><span class="pdot pd-ok"></span>与上一次相比（最近两次）：总体分提高 '+dd+' 分（'+fmt(a1)+' → '+fmt(a2)+'），近期呈改善趋势。</div>');
+          else if(dd<=-3)out.push('<div class="pb"><span class="pdot pd-warn"></span>与上一次相比（最近两次）：总体分下降 '+Math.abs(dd)+' 分（'+fmt(a1)+' → '+fmt(a2)+'），近期呈下降趋势，请复诊时与医生讨论。</div>');
+          else out.push('<div class="pb"><span class="pdot pd-mute"></span>与上一次相比（最近两次）：总体分基本平稳（'+fmt(a1)+' → '+fmt(a2)+'）。</div>');
+        }
+      }
+      out.push('<div class="pb"><span class="pdot pd-mute"></span>注：重复测评时，部分人会因熟悉测验而分数略有提高（「练习效应」），请结合总体趋势与日常生活表现理解变化。</div>');
+    }else{
+      out.push('<div class="pb"><span class="pdot pd-mute"></span>这是您第一次测评；后续再测评后，可与本次结果对比，看到变化趋势。</div>');
     }
+    // ⑤ 说明与免责声明
+    out.push(psub('⑤ 说明与免责声明'));
     if(!allMode){
       const rNow=recs[s];
-      if(rNow&&rNow.comp<9)out.push('<div class="pb"><span class="pdot pd-mute"></span>注：本次测评完成 '+rNow.comp+' 项核心测验，解读仅供参考。</div>');
+      if(rNow&&rNow.comp<9)out.push('<div class="pb"><span class="pdot pd-mute"></span>本次测评完成 9 项核心测验中的 '+rNow.comp+' 项，相关域的解读仅供参考。</div>');
     }
-    out.push('<div class="pdisc">说明：T 分是按年龄校正后的分数，同龄人平均 50 分、标准差 10 分，40–60 分是常见参考区间。本解读由测评数据自动生成，仅供参考，不构成诊断或治疗建议，具体请以主治医师意见为准。</div>');
+    const missDom=DOMAINS.filter(d=>mp[d]==null);
+    if(missDom.length)out.push('<div class="pb"><span class="pdot pd-mute"></span>当前口径未测出以下认知域的 T 分：'+missDom.map(d=>(CLAB[d]||d)).join('、')+'，相关部分仅按已完成内容解读。</div>');
+    out.push('<div class="pdisc">T 分说明：T 分是按年龄校正后的分数，同龄人平均 50 分、标准差 10 分，40–60 分是常见参考区间。分数波动：同一人不同次测评分数可能相差数分，也可能受当天状态、睡眠、情绪、用药等临时因素影响，单次波动不代表真实水平变化；重复测评还可能因熟悉测验而略有提高（练习效应）。本解读由测评数据自动生成，仅供参考，不构成诊断或治疗建议；报告中「强项/留意」是相对同龄人的比较，不等同于对日常能力的判断。如报告与日常生活表现不符，或有任何疑问，请咨询主治医师。</div>');
     return out.join('');
   }
   // ---- 访视 chips（按当前 sel 高亮）----
