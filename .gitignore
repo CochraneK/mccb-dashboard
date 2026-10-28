@@ -1,9 +1,0 @@
-# 真实数据与本地生成产物 —— 一律不提交
-/data/*.xls
-/data/*.xlsx
-/mccb_dashboard.html
-/person.html
-/reports/
-_jscheck/
-docs/_build/
-__pycache__/
