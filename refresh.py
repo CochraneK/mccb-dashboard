@@ -1572,6 +1572,15 @@ PERSON_TEMPLATE = r"""<!DOCTYPE html>
 .pillst.severe{background:#fff1f2;color:#be123c;border-color:#fecdd3}
 .pillst.na{background:#f9fafb;color:var(--muted);border-color:var(--line)}
 .curmark{display:inline-block;background:var(--teal);color:#fff;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px}
+/* 通俗解读（患者/家属可读） */
+.plain{background:linear-gradient(135deg,#f0fdfa 0%,#ffffff 60%)}
+.pb{display:flex;gap:9px;align-items:flex-start;padding:8px 0;font-size:13.5px;line-height:1.65;border-bottom:1px dashed var(--line)}
+.pb b{font-variant-numeric:tabular-nums}
+.pdot{width:8px;height:8px;border-radius:50%;margin-top:7px;flex:none}
+.pd-ok{background:var(--teal)}
+.pd-warn{background:var(--amber)}
+.pd-mute{background:#94a3b8}
+.pdisc{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.65}
 </style>
 </head>
 <body>
@@ -1692,7 +1701,8 @@ function renderPerson(p){
       '<div class="kpi"><div class="k">性别</div><div class="v">'+esc(p.gender||'—')+'</div><div class="s">受试者</div></div>'+
       '<div class="kpi"><div class="k">同组规模</div><div class="v">'+(gp.__npers||0)+'</div><div class="s">'+esc(p.diag||'其他')+' 组人数</div></div>'+
     '</div>'+
-    (multi?('<div class="card vbar"><span class="vt">访视切换</span><span class="vhint">共 '+recs.length+' 次访视 · 点击切换下方判读口径（KPI / 筛查 / 雷达 / 差值 / 对标）</span><span class="vchips" id="pVisChips"></span></div>'):'')+
+    (multi?('<div class="card vbar"><span class="vt">访视切换</span><span class="vhint">共 '+recs.length+' 次访视 · 点击切换下方判读口径（KPI / 通俗解读 / 筛查 / 雷达 / 差值 / 对标）</span><span class="vchips" id="pVisChips"></span></div>'):'')+
+    '<div class="card plain"><h3><span class="dot"></span>通俗解读（患者/家属）</h3><div class="hint">判定口径：<span id="pPlainScope"></span> · T 分：50 = 同龄平均，40–60 常见参考区间</div><div id="pPlain"></div></div>'+
     '<div class="card"><h3><span class="dot"></span>认知损害筛查（临床 T 分标准）</h3><div class="hint">判定口径：<span id="pScopeTag"></span> · T≥40 正常 · 30≤T&lt;40 轻度偏低 · T&lt;30 显著偏低（MCCB 惯用受损界值）</div><div id="pScreenSum"></div><div class="screen" id="pScreen"></div></div>'+
     '<div class="grid g-2">'+
       '<div class="card"><h3><span class="dot"></span>认知域剖面（基准 T=50）</h3><div class="hint">7 认知域，虚线为同诊断组均值</div><div class="chart-box" style="height:340px"><canvas id="cRadar"></canvas></div></div>'+
@@ -1799,6 +1809,60 @@ function renderPerson(p){
       }).join('')+'</tbody></table>';
     document.getElementById('pdet').innerHTML=h;
   }
+  // ---- 通俗解读（患者/家属可读；措辞温和、不下诊断结论）----
+  function plainBullets(mp,s){
+    const allMode=(s==='all');
+    const out=[];
+    const ov=mp['Overall Comp'];
+    if(ov==null){
+      out.push('<div class="pb"><span class="pdot pd-mute"></span>本口径缺少总体综合分，请参照下方各认知域的分数。</div>');
+    }else{
+      let lvl;
+      if(ov<30)lvl='明显低于同龄平均水平（参考值 50 分），属于明显偏低区间（30 分以下）';
+      else if(ov<40)lvl='低于同龄平均水平（参考值 50 分），属于轻度偏低区间（30–40 分）';
+      else if(ov<45)lvl='略低于同龄平均水平（参考值 50 分），但仍在正常参考范围（40 分以上）';
+      else if(ov<55)lvl='处于同龄平均水平（参考值 50 分）';
+      else if(ov<60)lvl='略高于同龄平均水平（参考值 50 分）';
+      else lvl='明显高于同龄平均水平（参考值 50 分）';
+      let grp='';
+      const gm=gp['Overall Comp'];
+      if(gm!=null){
+        const d=Math.round((ov-gm)*10)/10;
+        grp=' 与同诊断组（'+(gp.__npers||0)+' 人）相比，您'+(d>=1.5?'高于组内平均水平。':(d<=-1.5?'低于组内平均水平。':'与组内平均水平大体相当。'));
+      }
+      const tail=ov<40?' 单项分数可能受睡眠、情绪等临时因素影响，复看时可与医生留意这一点。':'';
+      out.push('<div class="pb"><span class="pdot '+(ov<40?'pd-warn':'pd-ok')+'"></span>您的总体认知水平为 <b>'+fmt(ov)+' 分</b>（'+lvl+'）。'+grp+tail+'</div>');
+    }
+    const doms=DOMAINS.map(d=>({d:d,t:mp[d]})).filter(x=>x.t!=null).sort((a,b)=>b.t-a.t);
+    const strong=doms.filter(x=>x.t>=55);
+    const okDom=doms.filter(x=>x.t>=50);
+    if(strong.length){
+      out.push('<div class="pb"><span class="pdot pd-ok"></span>相对强项：'+strong.slice(0,2).map(x=>(CLAB[x.d]||x.d)+' '+fmt(x.t)+' 分').join('、')+'，明显高于同龄平均水平，是您的优势所在。</div>');
+    }else if(okDom.length){
+      out.push('<div class="pb"><span class="pdot pd-ok"></span>相对强项：'+okDom.slice(0,2).map(x=>(CLAB[x.d]||x.d)+' '+fmt(x.t)+' 分').join('、')+'，达到或接近同龄平均水平。</div>');
+    }
+    const warn=doms.filter(x=>x.t<40).sort((a,b)=>a.t-b.t);
+    if(warn.length){
+      out.push('<div class="pb"><span class="pdot pd-warn"></span>需要多留意：'+warn.map(x=>(CLAB[x.d]||x.d)+' '+fmt(x.t)+' 分').join('、')+'，低于正常参考下限（40 分）。建议与医生结合日常生活表现一起评估，经过针对性训练后常可见改善。</div>');
+    }else{
+      out.push('<div class="pb"><span class="pdot pd-ok"></span>各认知域均未低于关注线（40 分），整体表现良好。</div>');
+    }
+    if(multi){
+      const fv=(recs[0].sc||{})['Overall Comp'],lvv=(recs[recs.length-1].sc||{})['Overall Comp'];
+      if(fv!=null&&lvv!=null){
+        const delta=Math.round((lvv-fv)*10)/10;
+        if(delta>=3)out.push('<div class="pb"><span class="pdot pd-ok"></span>时间变化：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分升到 '+fmt(lvv)+' 分（提升 '+delta+' 分），呈改善趋势，请继续保持当前的生活与治疗方案。</div>');
+        else if(delta<=-3)out.push('<div class="pb"><span class="pdot pd-warn"></span>时间变化：从首次到最近一次测评，总体认知分从 '+fmt(fv)+' 分降到 '+fmt(lvv)+' 分（下降 '+Math.abs(delta)+' 分），呈下降趋势，请复诊时带上这份报告与医生讨论。</div>');
+        else out.push('<div class="pb"><span class="pdot pd-mute"></span>时间变化：总体认知分在多次测评间基本稳定（'+fmt(fv)+' → '+fmt(lvv)+' 分），未见明显变化。</div>');
+      }
+    }
+    if(!allMode){
+      const rNow=recs[s];
+      if(rNow&&rNow.comp<9)out.push('<div class="pb"><span class="pdot pd-mute"></span>注：本次测评完成 '+rNow.comp+' 项核心测验，解读仅供参考。</div>');
+    }
+    out.push('<div class="pdisc">说明：T 分是按年龄校正后的分数，同龄人平均 50 分、标准差 10 分，40–60 分是常见参考区间。本解读由测评数据自动生成，仅供参考，不构成诊断或治疗建议，具体请以主治医师意见为准。</div>');
+    return out.join('');
+  }
   // ---- 访视 chips（按当前 sel 高亮）----
   const chipsEl=document.getElementById('pVisChips');
   function chipHtml(){
@@ -1838,7 +1902,10 @@ function renderPerson(p){
     document.getElementById('kOC').textContent=fmt(mp['Overall Comp']);
     document.getElementById('kNC').textContent=fmt(mp['Neurocog Comp']);
     if(multi&&chipsEl)chipsEl.innerHTML=chipHtml();
-    document.getElementById('pScopeTag').textContent=allMode?(multi?('多访视均值（'+recs.length+' 次）'):'单次访视'):(recs[s].date+'（'+String(recs[s].id)+'）');
+    const plainScopeTxt=allMode?(multi?('多访视均值（'+recs.length+' 次）'):'单次访视'):(recs[s].date+'（'+String(recs[s].id)+'）');
+    document.getElementById('pScopeTag').textContent=plainScopeTxt;
+    document.getElementById('pPlainScope').textContent=plainScopeTxt;
+    document.getElementById('pPlain').innerHTML=plainBullets(mp,s);
     const sCells=COMP.map(b=>{const t=mp[b],o=tierOf(t);return '<div class="screen-cell '+o.lv+'"><div class="lbl">'+(CLAB[b]||b)+'</div><div class="tval">'+(t==null?'—':fmt(t))+'</div><div class="tier">'+o.tier+'</div><div class="sd">'+o.sd+'</div></div>';}).join('');
     document.getElementById('pScreen').innerHTML=sCells;
     const domImp=DOMAINS.filter(d=>mp[d]!=null&&mp[d]<40).length;
